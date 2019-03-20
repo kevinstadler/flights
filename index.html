@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>Flights I've flown</title>
+	<link rel="stylesheet" href="https://openlayers.org/en/v5.3.0/css/ol.css" type="text/css">
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/4.6.3/papaparse.js"></script>
+	<script src="https://api.mapbox.com/mapbox.js/plugins/arc.js/v0.1.0/arc.js"></script>
+	<script src="https://cdn.rawgit.com/openlayers/openlayers.github.io/master/en/v5.3.0/build/ol.js"></script>
+	<style>
+	body {
+		font-family: sans-serif;
+	}
+.ol-popup {
+position: absolute;
+background-color: white;
+-webkit-filter: drop-shadow(0 1px 4px rgba(0,0,0,0.2));
+filter: drop-shadow(0 1px 4px rgba(0,0,0,0.2));
+padding: 15px;
+border-radius: 10px;
+border: 1px solid #cccccc;
+bottom: 12px;
+left: -50px;
+min-width: 320px;
+}
+.ol-popup:after, .ol-popup:before {
+top: 100%;
+border: solid transparent;
+content: " ";
+height: 0;
+width: 0;
+position: absolute;
+pointer-events: none;
+}
+.ol-popup:after {
+border-top-color: white;
+border-width: 10px;
+left: 48px;
+margin-left: -10px;
+}
+.ol-popup:before {
+border-top-color: #cccccc;
+border-width: 11px;
+left: 48px;
+margin-left: -11px;
+}
+.ol-popup-closer {
+text-decoration: none;
+position: absolute;
+top: 2px;
+right: 8px;
+}
+.ol-popup-closer:after {
+content: "✖";
+}
+	</style>
+</head>
+<body>
+	<div id="map" class="map">
+	</div>
+	<div id="popup" class="ol-popup">
+		<a href="#" id="popup-closer" class="ol-popup-closer"></a>
+		<div id="popup-content"></div>
+	</div>
+	<p>Upload your own CSV file: <input type="file" id="input"> <label id="inputlabel"></label></p>
+<script type="text/javascript">
+	var flightSource = new ol.source.Vector({
+		wrapX: true,
+			attributions: 'Airport coordinate data by <a href="http://openflights.org/data.html">OpenFlights</a>',
+			loader: function() {
+				// https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat
+				readTextFile("./airports.dat", loadAirports);
+//				readTextFile("./flights.csv", drawFlights);
+				readTextFile("https://kevinstadler.github.io/lists/flights.csv", drawFlights);
+			}
+		});
+
+	var stroke = new ol.style.Stroke({color: 'black', width: 2});
+	var fill = new ol.style.Fill({color: 'red'});
+	var airportStyle = new ol.style.Style({
+		image: new ol.style.RegularShape({
+			fill: fill,
+			stroke: stroke,
+			points: 3,
+			radius: 8,
+			rotation: 0,
+			angle: 0
+		})
+	});
+
+	var flightLayer = new ol.layer.Vector({
+		source: flightSource,
+		style: function(feature, resolution) {
+			if (feature.getGeometry().getType() == "LineString") {
+				return new ol.style.Style({
+					stroke: new ol.style.Stroke({
+						color: '#EAE911',
+						width: routes[feature.get('route')].flights.length // TODO scale
+					})
+				});
+			} else {
+				return airportStyle;
+			}
+		}
+	});
+
+	var container = document.getElementById('popup');
+	var content = document.getElementById('popup-content');
+	var closer = document.getElementById('popup-closer');
+
+	var popup = new ol.Overlay({
+		element: container,
+		autoPan: true,
+		autoPanAnimation: {
+			duration: 250
+		}
+//		positioning: 'bottom-center',
+//		stopEvent: false,
+//		offset: [0, -50]
+	});
+
+	closer.onclick = function() {
+		popup.setPosition(undefined);
+		closer.blur();
+		return false;
+	};
+
+	var map = new ol.Map({
+		target: document.getElementById('map'),
+		layers: [
+			new ol.layer.Tile({
+					source: new ol.source.BingMaps({
+					key: "AnzJ8GUrq-Q-tkdVYWFWs-3H9pIyykpZBwnLXyGTXDA8WV6-1kg-veWxC9XBpMAt",
+					imagerySet: "Aerial",
+					maxZoom: 19
+				})
+			}),
+			flightLayer
+		],
+		view: new ol.View({
+			center: ol.proj.fromLonLat([0, 40]),
+			zoom: 2.5,
+			minZoom: 2,
+			maxZoom: 7
+		}),
+		overlays: [popup]
+	});
+
+	function formatAirport(apt) {
+		return '<b>' + apt[4] + '</b> ' + apt[1];
+	}
+
+	// display popup on click
+	map.on('singleclick', function(evt) {
+		var feature = map.forEachFeatureAtPixel(evt.pixel,
+			function(feature) {
+				return feature;
+			});
+		if (feature) {
+			if (feature.getGeometry().getType() == "Point") {
+				// airport
+				var blurb = formatAirport(feature.get('airport')) + '<br>airports flown from/to:<ul>';
+				feature.get('airport').routes.forEach(function (route) {
+					var r = routes[route];
+					var other = (r.apt1[0] == feature.get('airport')[0]) ? r.apt2 : r.apt1;
+					blurb += '<li>' + formatAirport(other) + ' (' + routes[route].flights.length + ' times)</li>';
+				});
+				content.innerHTML = blurb + '</ul>';
+			} else {
+				// flight route
+				route = routes[feature.get('route')];
+				var blurb = 'route between<br>' + formatAirport(route.apt1) + '<br>' + formatAirport(route.apt2) + '<br>flown ' + route.flights.length + ' times:<ul>';
+				route.flights.forEach(function (flight) {
+					blurb += '<li>' + flight.date + ' (' + flight.from + '&rightarrow;' + flight.to + ')</li>';
+				});
+				content.innerHTML = blurb + '</ul>';
+			}
+			var coordinates = feature.getGeometry().getCoordinates();
+			popup.setPosition(evt.coordinate);
+		} else {
+			closer.onclick();
+		}
+	});
+
+	// change mouse cursor when over marker
+	map.on('pointermove', function(e) {
+//		if (e.dragging) {
+//			$(element).popover('destroy');
+//			return;
+//		}
+		var pixel = map.getEventPixel(e.originalEvent);
+		var hit = map.hasFeatureAtPixel(pixel);
+		map.getTarget().style.cursor = hit ? 'pointer' : '';
+	});
+
+	var airports;
+	function loadAirports(data) {
+		airports = Papa.parse(data, {
+			dynamicTyping: true
+		})['data'];
+	}
+
+	function routeName(apt1, apt2) {
+		return (apt1 < apt2) ? apt1.concat(apt2) : apt2.concat(apt1);
+	}
+
+	var flights;
+	var routes;
+	function drawFlights(data) {
+		flights = Papa.parse(data, {
+			header: true,
+			skipEmptyLines: true,
+			dynamicTyping: true
+		})['data'];
+		flights.forEach(function(flight) {
+			flight.route = routeName(flight['from'], flight['to']);
+		});
+		var codes = Array.from(new Set(flights.map(flight => flight['from']).concat(flights.map(flight => flight['to']))));
+		// id, name, city, country, iata, icao, lat, lon, alt, utc, dst, tz, type, source
+		var myAirports = airports.filter(airport => codes.includes(airport[4]));
+		myAirports.forEach(function (apt) {
+			apt.routes = [];
+		});
+
+		// clear old data
+		flightSource.clear();
+
+		for (var i = 0; i < myAirports.length; i++) {
+			var point = new ol.geom.Point([ myAirports[i][7], myAirports[i][6] ]);
+			point.transform('EPSG:4326', 'EPSG:3857');
+			var feature = new ol.Feature({
+				geometry: point,
+				airport: myAirports[i]
+			});
+			flightSource.addFeature(feature);
+		}
+
+		routes = {};
+
+		flights.forEach(function (flight) {
+			var route = routeName(flight['from'], flight['to']);
+			var from = myAirports.find(airport => airport[4] == flight['from']);
+			var to = myAirports.find(airport => airport[4] == flight['to']);
+
+			if (routes[route] != null) {
+				routes[route].flights.push(flight);
+			} else {
+				routes[route] = { apt1: from, apt2: to, flights: [flight] };
+				from.routes.push(route);
+				to.routes.push(route);
+
+				// create an arc circle between the two locations
+				var arcGenerator = new arc.GreatCircle(
+					{x: from[7], y: from[6]},
+					{x: to[7], y: to[6]});
+
+				var arcLine = arcGenerator.Arc(100, {offset: 10});
+				if (arcLine.geometries.length === 1) {
+					var line = new ol.geom.LineString(arcLine.geometries[0].coords);
+					line.transform('EPSG:4326', 'EPSG:3857');
+
+					var feature = new ol.Feature({
+						geometry: line,
+						route: route,
+						finished: false
+					});
+					flightSource.addFeature(feature);
+				} else {
+					console.log("arc weird?");
+				}
+			}
+		});
+	}
+
+	function readTextFile(file, callback) {
+		var rawFile = new XMLHttpRequest();
+		rawFile.open("GET", file, false);
+		rawFile.onreadystatechange = function () {
+			if (rawFile.readyState === 4) {
+				if (rawFile.status === 200 || rawFile.status == 0) {
+					callback(rawFile.responseText);
+				}
+			}
+		}
+		rawFile.send(null);
+	}
+
+	const fileUpload = document.getElementById("input");
+	const statusLabel = document.getElementById("inputlabel");
+	fileUpload.onchange = function() {
+//		statusLabel.content = "Parsing CSV...";
+		var reader = new FileReader();
+		reader.onload = function(evt) {
+			drawFlights(evt.target.result);
+		}
+		reader.readAsText(this.files[0]);
+	}
+
+	</script>
+</body>
+</html>
