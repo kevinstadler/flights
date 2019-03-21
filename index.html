@@ -1,7 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<title>Flights I've flown</title>
+	<meta charset="utf-8" />
+	<title>flights I've flown</title>
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-135006739-1"></script>
+	<script>
+		window.dataLayer = window.dataLayer || [];
+		function gtag(){dataLayer.push(arguments);}
+		gtag('js', new Date());
+		gtag('config', 'UA-96498670-1');
+	</script>
 	<link rel="stylesheet" href="https://openlayers.org/en/v5.3.0/css/ol.css" type="text/css">
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/4.6.3/papaparse.js"></script>
 	<script src="https://api.mapbox.com/mapbox.js/plugins/arc.js/v0.1.0/arc.js"></script>
@@ -61,16 +69,19 @@ content: "✖";
 		<a href="#" id="popup-closer" class="ol-popup-closer"></a>
 		<div id="popup-content"></div>
 	</div>
-	<p>Upload your own CSV file: <input type="file" id="input"> <label id="inputlabel"></label></p>
+	<p>Upload your own CSV file: <input type="file" id="input"> <label id="inputlabel"></label> <span id="statusLabel">Ready.</span></p>
+	<p>CSV format: your file can have as many columns as you like, just make sure you have a header row which defines at least the following columns: <i>from</i> (3 letter airport code), <i>to</i> (3 letter airport code), <i>date</i> (any format, only rendered as a string at the moment.)</p>
 <script type="text/javascript">
+	var statusLabel = document.getElementById('statusLabel');
+
 	var flightSource = new ol.source.Vector({
 		wrapX: true,
 			attributions: 'Airport coordinate data by <a href="http://openflights.org/data.html">OpenFlights</a>',
 			loader: function() {
 				// https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat
 				readTextFile("./airports.dat", loadAirports);
-//				readTextFile("./flights.csv", drawFlights);
-				readTextFile("https://kevinstadler.github.io/lists/flights.csv", drawFlights);
+				readTextFile("../lists/flights.csv", drawFlights);
+//				readTextFile("https://kevinstadler.github.io/lists/flights.csv", drawFlights);
 			}
 		});
 
@@ -168,7 +179,7 @@ content: "✖";
 			} else {
 				// flight route
 				route = routes[feature.get('route')];
-				var blurb = 'route between<br>' + formatAirport(route.apt1) + '<br>' + formatAirport(route.apt2) + '<br>flown ' + route.flights.length + ' times:<ul>';
+				var blurb = 'route between<br>' + formatAirport(route.apt1) + '<br>' + formatAirport(route.apt2) + '<br>(' + route.distance + 'km) flown ' + route.flights.length + ' times:<ul>';
 				route.flights.forEach(function (flight) {
 					blurb += '<li>' + flight.date + ' (' + flight.from + '&rightarrow;' + flight.to + ')</li>';
 				});
@@ -201,6 +212,10 @@ content: "✖";
 
 	function routeName(apt1, apt2) {
 		return (apt1 < apt2) ? apt1.concat(apt2) : apt2.concat(apt1);
+	}
+
+	function toRadians(degrees) {
+		return degrees * Math.PI / 180.0;
 	}
 
 	var flights;
@@ -236,6 +251,8 @@ content: "✖";
 
 		routes = {};
 
+		var nFlights = 0;
+		var totalDistance = 0;
 		flights.forEach(function (flight) {
 			var route = routeName(flight['from'], flight['to']);
 			var from = myAirports.find(airport => airport[4] == flight['from']);
@@ -244,7 +261,15 @@ content: "✖";
 			if (routes[route] != null) {
 				routes[route].flights.push(flight);
 			} else {
-				routes[route] = { apt1: from, apt2: to, flights: [flight] };
+				// calculate central angle between airports (everything in radians)
+				var longDiff = toRadians(Math.abs(from[7] - to[7]));
+				var fromLat = toRadians(from[6]);
+				var toLat = toRadians(to[6]);
+				var angle = Math.acos(Math.sin(fromLat) * Math.sin(toLat) + Math.cos(fromLat) * Math.cos(toLat) * Math.cos(longDiff));
+				// mean earth radius: 6371.0088km
+				// arc length = 2*pi*r
+				var distance = Math.round(angle * 6371.0088);
+				routes[route] = { apt1: from, apt2: to, flights: [flight], distance: distance };
 				from.routes.push(route);
 				to.routes.push(route);
 
@@ -268,7 +293,11 @@ content: "✖";
 					console.log("arc weird?");
 				}
 			}
+			nFlights += 1;
+			totalDistance += routes[route].distance;
 		});
+
+		statusLabel.textContent = totalDistance + "km travelled on " + nFlights + " flights along " + Object.keys(routes).length + " different routes";
 	}
 
 	function readTextFile(file, callback) {
@@ -285,14 +314,14 @@ content: "✖";
 	}
 
 	const fileUpload = document.getElementById("input");
-	const statusLabel = document.getElementById("inputlabel");
 	fileUpload.onchange = function() {
-//		statusLabel.content = "Parsing CSV...";
+		statusLabel.textContent = "Parsing CSV...";
 		var reader = new FileReader();
 		reader.onload = function(evt) {
 			drawFlights(evt.target.result);
 		}
 		reader.readAsText(this.files[0]);
+		document.title = "flights you've flown";
 	}
 
 	</script>
