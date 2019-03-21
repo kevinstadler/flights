@@ -17,6 +17,17 @@
 	<style>
 	body {
 		font-family: sans-serif;
+		font-size: 14px;
+	}
+	h2 {
+		font-size: 115%;
+	}
+	#statusLabel {
+		font-weight: bold;
+	}
+	.map {
+		width: 80%;
+		margin: auto;
 	}
 .ol-popup {
 position: absolute;
@@ -69,8 +80,11 @@ content: "✖";
 		<a href="#" id="popup-closer" class="ol-popup-closer"></a>
 		<div id="popup-content"></div>
 	</div>
-	<p>Upload your own CSV file: <input type="file" id="input"> <label id="inputlabel"></label> <span id="statusLabel">Ready.</span></p>
-	<p>CSV format: your file can have as many columns as you like, just make sure you have a header row which defines at least the following columns: <i>from</i> (3 letter airport code), <i>to</i> (3 letter airport code), <i>date</i> (any format, only rendered as a string at the moment.)</p>
+	<p id="statusLabel">Ready.</p>
+	<p>Upload your own CSV file: <input type="file" id="input"></p>
+	<p>CSV format: your file can have as many columns as you like, just make sure you have a header row which defines at least the following columns: <i>from</i> (3 letter airport code), <i>to</i> (3 letter airport code), <i>date</i> (any format, only rendered as a string at the moment). Add a <i>flight</i> column if you also want links to external flight/route information.</p>
+	<p><small><sup>*</sup> distances calculated are great-circle distances between airports, your actual distance travelled (including delays and indirect flight paths) will on average be 9% higher.</small></p>
+	<p><small><sup>**</sup> CO<sub>2</sub> calculation assumes 115g per passenger km (average emission for short international flights<sup><a href="https://en.wikipedia.org/wiki/Environmental_impact_of_aviation#Greenhouse_gas_emissions_per_passenger_kilometre" target="_blank">1</a>, <a href="https://www.carbonindependent.org/sources_aviation.html" target="_blank">2</a></sup>) and does <i>not</i> take into account either the average 9% increase for realistic flight routes or <a href="https://www.carbonindependent.org/sources_aviation.html#h5" target="_blank">radiative forcing</a> (which increases your emissions by about a factor of two).</small></p>
 <script type="text/javascript">
 	var statusLabel = document.getElementById('statusLabel');
 
@@ -91,9 +105,9 @@ content: "✖";
 		image: new ol.style.RegularShape({
 			fill: fill,
 			stroke: stroke,
-			points: 3,
-			radius: 8,
-			rotation: 0,
+			points: 5,
+			radius: 10,
+			radius2: 4,
 			angle: 0
 		})
 	});
@@ -104,8 +118,8 @@ content: "✖";
 			if (feature.getGeometry().getType() == "LineString") {
 				return new ol.style.Style({
 					stroke: new ol.style.Stroke({
-						color: '#EAE911',
-						width: routes[feature.get('route')].flights.length // TODO scale
+						color: '#EAE91199',
+						width: 1.2 * routes[feature.get('route')].flights.length // TODO scale
 					})
 				});
 			} else {
@@ -169,19 +183,27 @@ content: "✖";
 		if (feature) {
 			if (feature.getGeometry().getType() == "Point") {
 				// airport
-				var blurb = formatAirport(feature.get('airport')) + '<br>airports flown from/to:<ul>';
-				feature.get('airport').routes.forEach(function (route) {
+				var airport = feature.get('airport');
+				var totalFlights = 0;
+				var blurb = '';
+				airport.routes.forEach(function (route) {
 					var r = routes[route];
-					var other = (r.apt1[0] == feature.get('airport')[0]) ? r.apt2 : r.apt1;
+					var other = (r.apt1[0] == airport[0]) ? r.apt2 : r.apt1;
+					totalFlights += routes[route].flights.length;
 					blurb += '<li>' + formatAirport(other) + ' (' + routes[route].flights.length + ' times)</li>';
 				});
-				content.innerHTML = blurb + '</ul>';
+				content.innerHTML = '<h2>' + formatAirport(feature.get('airport')) + '</h2>flown from/to <u>' + totalFlights + ' times</u> along <u>' + airport.routes.length +  ' route(s)</u>:<ul>' + blurb + '</ul>';
+
 			} else {
 				// flight route
 				route = routes[feature.get('route')];
-				var blurb = 'route between<br>' + formatAirport(route.apt1) + '<br>' + formatAirport(route.apt2) + '<br>(' + route.distance + 'km) flown ' + route.flights.length + ' times:<ul>';
+				var blurb = formatAirport(route.apt1) + ' &harr;<br>' + formatAirport(route.apt2) + '<p>route (' + route.distance + 'km) flown <u>' + route.flights.length + ' times</u>:</p><ul>';
 				route.flights.forEach(function (flight) {
-					blurb += '<li>' + flight.date + ' (' + flight.from + '&rightarrow;' + flight.to + ')</li>';
+					blurb += '<li>' + flight.date + ' (' + flight.from + '&rightarrow;' + flight.to ;
+					if (flight.flight) {
+						blurb += ', <a href="https://flightaware.com/live/flight/' + flight.flight + '" target="_blank">' + flight.flight + '</a>';
+					}
+					blurb += ')</li>';
 				});
 				content.innerHTML = blurb + '</ul>';
 			}
@@ -226,6 +248,10 @@ content: "✖";
 			skipEmptyLines: true,
 			dynamicTyping: true
 		})['data'];
+		if (!(flights[0].from && flights[0].to && flights[0].date)) {
+			statusLabel.innerHTML = 'Malformed CSV file: make sure your file has a header row which defines the columns <i>from</i>, <i>to</i> and <i>date</i>.';
+			return;
+		}
 		flights.forEach(function(flight) {
 			flight.route = routeName(flight['from'], flight['to']);
 		});
@@ -296,8 +322,11 @@ content: "✖";
 			nFlights += 1;
 			totalDistance += routes[route].distance;
 		});
-
-		statusLabel.textContent = totalDistance + "km travelled on " + nFlights + " flights along " + Object.keys(routes).length + " different routes";
+		// https://www.carbonindependent.org/sources_aviation.html
+		// 115g CO2 per passenger km for a Boeing 737-400, not including radiative forcing
+		// = .115 kg = .000115 metric tons
+		// see also https://en.wikipedia.org/wiki/Carbon_footprint#Flight
+		statusLabel.innerHTML = "Total distance travelled: at least<sup>*</sup> " + totalDistance.toLocaleString() + "km on " + nFlights + " flights along " + Object.keys(routes).length + " different routes. Approximate<sup>**</sup> CO<sub>2</sub> emission: " + Math.round(totalDistance * .0115)/100 + ' <a href="https://makewealthhistory.org/2012/12/03/picture-a-tonne-of-carbon/" target="_blank">metric tons</a>';
 	}
 
 	function readTextFile(file, callback) {
