@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 	<meta charset="utf-8" />
+	<base>
 	<title>flights I've flown</title>
 	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-135006739-1"></script>
 	<script async>
@@ -77,14 +78,14 @@ content: "✖";
 	<div id="map" class="map">
 	</div>
 	<div id="popup" class="ol-popup">
-		<a href="#" id="popup-closer" class="ol-popup-closer"></a>
+		<a href="#" target="_self" id="popup-closer" class="ol-popup-closer"></a>
 		<div id="popup-content"></div>
 	</div>
 	<p id="statusLabel">Ready.</p>
 	<p>Upload your own CSV file: <input type="file" id="input"></p>
-	<p>CSV format: your file can have as many columns as you like, just make sure you have a header row which defines at least the following columns: <i>from</i> (3 letter airport code), <i>to</i> (3 letter airport code), <i>date</i> (any format, only rendered as a string at the moment). Add a <i>flight</i> column if you also want links to external flight/route information.</p>
+	<p>CSV format: your file can have as many columns as you like, just make sure you have a header row which defines at least the following columns: <i>from</i> (3 letter IATA code), <i>to</i> (3 letter IATA code), <i>date</i> (any format, only rendered as a string at the moment). Add a <i>flight</i> column if you also want links to external flight/route information.</p>
 	<p><small><sup>*</sup> distances calculated are great-circle distances between airports, your actual distance travelled (including delays and indirect flight paths) will on average be 9% higher.</small></p>
-	<p><small><sup>**</sup> CO<sub>2</sub> calculation assumes 115g per passenger km (average emission for short international flights<sup><a href="https://en.wikipedia.org/wiki/Environmental_impact_of_aviation#Greenhouse_gas_emissions_per_passenger_kilometre" target="_blank">1</a>, <a href="https://www.carbonindependent.org/sources_aviation.html" target="_blank">2</a></sup>) and does <i>not</i> take into account either the average 9% increase for realistic flight routes or <a href="https://www.carbonindependent.org/sources_aviation.html#h5" target="_blank">radiative forcing</a> (which increases your emissions by about a factor of two).</small></p>
+	<p><small><sup>**</sup> CO<sub>2</sub> calculation assumes 115g per passenger km (average emission for short international flights<sup><a href="https://en.wikipedia.org/wiki/Environmental_impact_of_aviation#Greenhouse_gas_emissions_per_passenger_kilometre">1</a>, <a href="https://www.carbonindependent.org/sources_aviation.html">2</a></sup>) and does <i>not</i> take into account either the average 9% increase for realistic flight routes or <a href="https://www.carbonindependent.org/sources_aviation.html#h5">radiative forcing</a> (which increases your emissions by about a factor of two).</small></p>
 <script type="text/javascript">
 	var statusLabel = document.getElementById('statusLabel');
 
@@ -200,7 +201,7 @@ content: "✖";
 				route.flights.forEach(function (flight) {
 					blurb += '<li>' + flight.date + ' (' + flight.from + '&rightarrow;' + flight.to ;
 					if (flight.flight) {
-						blurb += ', <a href="https://flightaware.com/live/flight/' + flight.flight + '" target="_blank">' + flight.flight + '</a>';
+						blurb += ', <a href="https://flightaware.com/live/flight/' + flight.flight + '">' + flight.flight + '</a>';
 					}
 					blurb += ')</li>';
 				});
@@ -325,7 +326,7 @@ content: "✖";
 		// 115g CO2 per passenger km for a Boeing 737-400, not including radiative forcing
 		// = .115 kg = .000115 metric tons
 		// see also https://en.wikipedia.org/wiki/Carbon_footprint#Flight
-		statusLabel.innerHTML = "Total distance travelled: at least<sup>*</sup> " + totalDistance.toLocaleString() + "km on " + nFlights + " flights along " + Object.keys(routes).length + " different routes. Approximate<sup>**</sup> CO<sub>2</sub> emission: " + Math.round(totalDistance * .0115)/100 + ' <a href="https://makewealthhistory.org/2012/12/03/picture-a-tonne-of-carbon/" target="_blank">metric tons</a>';
+		statusLabel.innerHTML = "Total distance travelled: at least<sup>*</sup> " + totalDistance.toLocaleString() + "km on " + nFlights + " flights along " + Object.keys(routes).length + " different routes. Approximate<sup>**</sup> CO<sub>2</sub> emission: " + Math.round(totalDistance * .0115)/100 + ' <a href="https://makewealthhistory.org/2012/12/03/picture-a-tonne-of-carbon/">metric tons</a>';
 	}
 
 	function readTextFile(file, callback) {
