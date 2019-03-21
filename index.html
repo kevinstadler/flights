@@ -4,7 +4,7 @@
 	<meta charset="utf-8" />
 	<title>flights I've flown</title>
 	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-135006739-1"></script>
-	<script>
+	<script async>
 		window.dataLayer = window.dataLayer || [];
 		function gtag(){dataLayer.push(arguments);}
 		gtag('js', new Date());
@@ -165,7 +165,7 @@ content: "✖";
 		var feature = map.forEachFeatureAtPixel(evt.pixel,
 			function(feature) {
 				return feature;
-			});
+			}, { hitTolerance: 10 });
 		if (feature) {
 			if (feature.getGeometry().getType() == "Point") {
 				// airport
@@ -199,7 +199,7 @@ content: "✖";
 //			return;
 //		}
 		var pixel = map.getEventPixel(e.originalEvent);
-		var hit = map.hasFeatureAtPixel(pixel);
+		var hit = map.hasFeatureAtPixel(pixel, { hitTolerance: 5 });
 		map.getTarget().style.cursor = hit ? 'pointer' : '';
 	});
 
