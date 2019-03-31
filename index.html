@@ -104,14 +104,13 @@ content: "✖";
 		});
 
 	var stroke = new ol.style.Stroke({color: 'black', width: 2});
-	var fill = new ol.style.Fill({color: 'red'});
+	var fill = new ol.style.Fill({color: '#EAE911AA'});
 	var airportStyle = new ol.style.Style({
 		image: new ol.style.RegularShape({
 			fill: fill,
 			stroke: stroke,
-			points: 5,
-			radius: 10,
-			radius2: 4,
+			points: 20,
+			radius: 6,
 			angle: 0
 		})
 	});
@@ -122,8 +121,8 @@ content: "✖";
 			if (feature.getGeometry().getType() == "LineString") {
 				return new ol.style.Style({
 					stroke: new ol.style.Stroke({
-						color: '#EAE91199',
-						width: 1.2 * routes[feature.get('route')].flights.length // TODO scale
+						color: routes[feature.get('route')].color,
+						width: 1.2 * routes[feature.get('route')].flights.length // TODO scale more nicely
 					})
 				});
 			} else {
@@ -203,7 +202,16 @@ content: "✖";
 				route = routes[feature.get('route')];
 				var blurb = formatAirport(route.apt1) + ' &harr;<br>' + formatAirport(route.apt2) + '<p>route (' + route.distance + 'km) flown <u>' + route.flights.length + ' times</u>:</p><ul>';
 				route.flights.forEach(function (flight) {
-					blurb += '<li>' + flight.date + ' (' + flight.from + '&rightarrow;' + flight.to ;
+					var purpose;
+					if (flight.academia) {
+						purpose = "work";
+						if (flight.personal) {
+							purpose += "+private"
+						}
+					} else {
+						purpose = "private";
+					}
+					blurb += '<li><div role="img" title="purpose of flight: ' + purpose + '" style="display: inline-block; width: 1em; height:1em; background: ' + flightColor(flight.academia, flight.personal) + ';"></div> ' + flight.date + ' (' + flight.from + '&rightarrow;' + flight.to ;
 					if (flight.flight) {
 						blurb += ', <a href="https://flightaware.com/live/flight/' + flight.flight + '">' + flight.flight + '</a>';
 					}
@@ -242,6 +250,26 @@ content: "✖";
 
 	function toRadians(degrees) {
 		return degrees * Math.PI / 180.0;
+	}
+
+	function toHex(i) {
+		return (i+0x10000).toString(16).substr(-2);
+	}
+
+	const maxIntensity = 200;
+	const fullWork = '#' + toHex(maxIntensity) + '0000';
+	const fullPersonal = '#0000' + toHex(maxIntensity);
+
+	function flightColor(work, personal) {
+		if (work) {
+			if (personal) {
+				return "linear-gradient(" + fullWork + ", " + fullPersonal + ")";
+			} else {
+				return fullWork;
+			}
+		} else {
+			return fullPersonal;
+		}
 	}
 
 	var flights;
@@ -283,14 +311,18 @@ content: "✖";
 
 		var nFlights = 0;
 		var totalDistance = 0;
+		var missedFlights = 0;
+		var missedDistance = 0;
 		flights.forEach(function (flight) {
 			var route = routeName(flight['from'], flight['to']);
-			var from = myAirports.find(airport => airport[4] == flight['from']);
-			var to = myAirports.find(airport => airport[4] == flight['to']);
 
 			if (routes[route] != null) {
-				routes[route].flights.push(flight);
+				if (!flight['missed']) {
+					routes[route].flights.push(flight);
+				}
 			} else {
+				var from = myAirports.find(airport => airport[4] == flight['from']);
+				var to = myAirports.find(airport => airport[4] == flight['to']);
 				// calculate central angle between airports (everything in radians)
 				var longDiff = toRadians(Math.abs(from[7] - to[7]));
 				var fromLat = toRadians(from[6]);
@@ -315,16 +347,30 @@ content: "✖";
 
 					var feature = new ol.Feature({
 						geometry: line,
-						route: route,
-						finished: false
+						route: route
 					});
 					flightSource.addFeature(feature);
 				} else {
 					console.log("arc weird?");
 				}
 			}
-			nFlights += 1;
-			totalDistance += routes[route].distance;
+			if (flight['missed']) {
+				missedFlights += 1;
+				missedDistance += routes[route].distance;
+			} else {
+				nFlights += 1;
+				totalDistance += routes[route].distance;
+			}
+		});
+		Object.values(routes).forEach(function (route) {
+			var work = 0;
+			var personal = 0;
+			route.flights.forEach(function (flight) {
+				work += flight.academia;
+				personal += flight.personal;
+			});
+			var red = Math.round(maxIntensity * work / (work + personal));
+			route.color = '#' + toHex(red) + '00' + toHex(maxIntensity - red) + '99';
 		});
 		// https://www.carbonindependent.org/sources_aviation.html
 		// 115g CO2 per passenger km for a Boeing 737-400, not including radiative forcing
