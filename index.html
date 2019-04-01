@@ -86,20 +86,26 @@ content: "✖";
 		<div id="popup-content"></div>
 	</div>
 	<p id="statusLabel">Ready.</p>
+	<p id="errorLabel" style="color: red"></p>
 	<p>Upload your own CSV file: <input type="file" id="input"></p>
 	<p><a href="https://en.wikipedia.org/wiki/Comma-separated_values#Example">CSV file format</a>: your file can have as many columns as you like, just make sure you have a header row which defines at least the following columns: <i>from</i> (3 letter <a href="https://en.wikipedia.org/wiki/IATA_airport_code">IATA airport code</a>), <i>to</i> (3 letter IATA code), <i>date</i> (any format, only displayed as-is at the moment). Add a <i>flight</i> column providing the flight code if you also want links to external flight/route information.</p>
 	<p><small><sup>*</sup> distances calculated are great-circle distances, i.e. the shortest possible distances between the two airports along the earth's surface. Your actual distance travelled (including delays and indirect flight paths) will on average be 9% higher than this value.</small></p>
 	<p><small><sup>**</sup> CO<sub>2</sub> calculation assumes 115g per passenger km (average emission for short international flights<sup><a href="https://en.wikipedia.org/wiki/Environmental_impact_of_aviation#Greenhouse_gas_emissions_per_passenger_kilometre">1</a>, <a href="https://www.carbonindependent.org/sources_aviation.html">2</a></sup>) and does <i>not</i> take into account either the average 9% distance increase for your actual flight path or the effects of <a href="https://www.carbonindependent.org/sources_aviation.html#h5">radiative forcing</a> (which increases your effective emissions by about a factor of two).</small></p>
 <script type="text/javascript">
 	var statusLabel = document.getElementById('statusLabel');
+	var errorLabel = document.getElementById('errorLabel');
 
+	var firstLoad = true;
 	var flightSource = new ol.source.Vector({
 		wrapX: true,
 			attributions: 'Airport coordinate data by <a href="http://openflights.org/data.html">OpenFlights</a>',
 			loader: function() {
-				// https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat
-				readTextFile("./airports.dat", loadAirports);
-				readTextFile("../lists/flights.csv", drawFlights);
+				if (firstLoad) {
+					// https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat
+					readTextFile("./airports.dat", loadAirports);
+					readTextFile("../lists/flights.csv", drawFlights);
+					firstLoad = false;
+				}
 			}
 		});
 
@@ -257,8 +263,8 @@ content: "✖";
 	}
 
 	const maxIntensity = 200;
-	const fullWork = '#' + toHex(maxIntensity) + '0000';
-	const fullPersonal = '#0000' + toHex(maxIntensity);
+	const fullPersonal = '#' + toHex(maxIntensity) + '0000';
+	const fullWork = '#0000' + toHex(maxIntensity);
 
 	function flightColor(work, personal) {
 		if (work) {
@@ -313,6 +319,7 @@ content: "✖";
 		var totalDistance = 0;
 		var missedFlights = 0;
 		var missedDistance = 0;
+		var errors = [];
 		flights.forEach(function (flight) {
 			var route = routeName(flight['from'], flight['to']);
 
@@ -322,7 +329,15 @@ content: "✖";
 				}
 			} else {
 				var from = myAirports.find(airport => airport[4] == flight['from']);
+				if (from == null) {
+					errors.push('Unknown airport "' + flight['from'] + '"');
+					return;
+				}
 				var to = myAirports.find(airport => airport[4] == flight['to']);
+				if (to == null) {
+					errors.push('Unknown airport "' + flight['to'] + '"');
+					return;
+				}
 				// calculate central angle between airports (everything in radians)
 				var longDiff = toRadians(Math.abs(from[7] - to[7]));
 				var fromLat = toRadians(from[6]);
@@ -340,9 +355,9 @@ content: "✖";
 					{x: from[7], y: from[6]},
 					{x: to[7], y: to[6]});
 
-				var arcLine = arcGenerator.Arc(100, {offset: 10});
-				if (arcLine.geometries.length === 1) {
-					var line = new ol.geom.LineString(arcLine.geometries[0].coords);
+				var arcLine = arcGenerator.Arc(100);
+				arcLine.geometries.forEach(function (arc) {
+					var line = new ol.geom.LineString(arc.coords);
 					line.transform('EPSG:4326', 'EPSG:3857');
 
 					var feature = new ol.Feature({
@@ -350,9 +365,7 @@ content: "✖";
 						route: route
 					});
 					flightSource.addFeature(feature);
-				} else {
-					console.log("arc weird?");
-				}
+				});
 			}
 			if (flight['missed']) {
 				missedFlights += 1;
@@ -363,20 +376,32 @@ content: "✖";
 			}
 		});
 		Object.values(routes).forEach(function (route) {
-			var work = 0;
-			var personal = 0;
-			route.flights.forEach(function (flight) {
-				work += flight.academia;
-				personal += flight.personal;
-			});
-			var red = Math.round(maxIntensity * work / (work + personal));
-			route.color = '#' + toHex(red) + '00' + toHex(maxIntensity - red) + '99';
+			var blue = 0;
+			if (route.flights[0].personal != null) {
+				var work = 0;
+				var personal = 0;
+				route.flights.forEach(function (flight) {
+					work += flight.academia;
+					personal += flight.personal;
+				});
+				if (work == NaN || personal == NaN) {
+					personal = 1;
+					work = 0;
+				}
+				blue = Math.round(maxIntensity * work / (work + personal));
+			}
+			route.color = '#' + toHex(maxIntensity - blue) + '00' + toHex(blue) + '99';
 		});
 		// https://www.carbonindependent.org/sources_aviation.html
 		// 115g CO2 per passenger km for a Boeing 737-400, not including radiative forcing
 		// = .115 kg = .000115 metric tons
 		// see also https://en.wikipedia.org/wiki/Carbon_footprint#Flight
 		statusLabel.innerHTML = "Total distance travelled: at least<sup>*</sup> " + totalDistance.toLocaleString() + "km on " + nFlights + " flights along " + Object.keys(routes).length + " different routes. Approximate<sup>**</sup> CO<sub>2</sub> emission: " + Math.round(totalDistance * .0115)/100 + ' <a href="https://makewealthhistory.org/2012/12/03/picture-a-tonne-of-carbon/">metric tons</a>';
+		if (errors.length) {
+			errorLabel.innerHTML = "Also encountered the following errors: " + errors;
+		} else {
+			errorLabel.innerHTML = "";
+		}
 	}
 
 	function readTextFile(file, callback) {
