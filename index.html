@@ -87,8 +87,8 @@ content: "✖";
 	</div>
 	<p id="statusLabel">Ready.</p>
 	<p id="errorLabel" style="color: red"></p>
-	<p>Upload your own CSV file: <input type="file" id="input"></p>
-	<p><a href="https://en.wikipedia.org/wiki/Comma-separated_values#Example">CSV file format</a>: your file can have as many columns as you like, just make sure you have a header row which defines at least the following columns: <i>from</i> (3 letter <a href="https://en.wikipedia.org/wiki/IATA_airport_code">IATA airport code</a>), <i>to</i> (3 letter IATA code), <i>date</i> (any format, only displayed as-is at the moment). Add a <i>flight</i> column providing the flight code if you also want links to external flight/route information.</p>
+	<p>Upload your own flight data CSV file: <input type="file" id="input"></p>
+	<p><a href="https://en.wikipedia.org/wiki/Comma-separated_values#Example">CSV file format</a>: your file can have as many columns as you like, just make sure you have a header row which defines at least the following columns: <i>from</i> (3 letter <a href="https://en.wikipedia.org/wiki/IATA_airport_code">IATA airport code</a>), <i>to</i> (3 letter IATA code), <i>date</i> (any format, only displayed as-is at the moment). Add a <i>flight</i> column providing the flight code if you also want links to external flight/route information. If you want to colour your flights according to purpose, add a <i>personal</i> and <i>work</i> column specifying boolean (true or false) values, both can be true for any given flight, in which case the distance travelled is split up for the calculation. For price calculation add a <i>cost</i> column of numeric values, for missed flight information add a <i>missed</i> column with true values for every missed flight.</p>
 	<p><small><sup>*</sup> distances calculated are great-circle distances, i.e. the shortest possible distances between the two airports along the earth's surface. Your actual distance travelled (including delays and indirect flight paths) will on average be 9% higher than this value.</small></p>
 	<p><small><sup>**</sup> CO<sub>2</sub> calculation assumes 115g per passenger km (average emission for short international flights<sup><a href="https://en.wikipedia.org/wiki/Environmental_impact_of_aviation#Greenhouse_gas_emissions_per_passenger_kilometre">1</a>, <a href="https://www.carbonindependent.org/sources_aviation.html">2</a></sup>) and does <i>not</i> take into account either the average 9% distance increase for your actual flight path or the effects of <a href="https://www.carbonindependent.org/sources_aviation.html#h5">radiative forcing</a> (which increases your effective emissions by about a factor of two).</small></p>
 <script type="text/javascript">
@@ -209,7 +209,7 @@ content: "✖";
 				var blurb = formatAirport(route.apt1) + ' &harr;<br>' + formatAirport(route.apt2) + '<p>route (' + route.distance + 'km) flown <u>' + route.flights.length + ' times</u>:</p><ul>';
 				route.flights.forEach(function (flight) {
 					var purpose;
-					if (flight.academia) {
+					if (flight.work) {
 						purpose = "work";
 						if (flight.personal) {
 							purpose += "+private"
@@ -217,7 +217,7 @@ content: "✖";
 					} else {
 						purpose = "private";
 					}
-					blurb += '<li><div role="img" title="purpose of flight: ' + purpose + '" style="display: inline-block; width: 1em; height:1em; background: ' + flightColor(flight.academia, flight.personal) + ';"></div> ' + flight.date + ' (' + flight.from + '&rightarrow;' + flight.to ;
+					blurb += '<li><div role="img" title="purpose of flight: ' + purpose + '" style="display: inline-block; width: 1em; height:1em; background: ' + flightColor(flight.work, flight.personal) + ';"></div> ' + flight.date + ' (' + flight.from + '&rightarrow;' + flight.to ;
 					if (flight.flight) {
 						blurb += ', <a href="https://flightaware.com/live/flight/' + flight.flight + '">' + flight.flight + '</a>';
 					}
@@ -319,6 +319,10 @@ content: "✖";
 		var totalDistance = 0;
 		var missedFlights = 0;
 		var missedDistance = 0;
+
+		var price = 0;
+		var pricedDistance = 0;
+
 		var errors = [];
 		flights.forEach(function (flight) {
 			var route = routeName(flight['from'], flight['to']);
@@ -367,6 +371,10 @@ content: "✖";
 					flightSource.addFeature(feature);
 				});
 			}
+			if (flight['cost']) {
+				price += flight['cost'];
+				pricedDistance += routes[route].distance;
+			}
 			if (flight['missed']) {
 				missedFlights += 1;
 				missedDistance += routes[route].distance;
@@ -375,13 +383,14 @@ content: "✖";
 				totalDistance += routes[route].distance;
 			}
 		});
+
 		Object.values(routes).forEach(function (route) {
 			var blue = 0;
 			if (route.flights[0].personal != null) {
 				var work = 0;
 				var personal = 0;
 				route.flights.forEach(function (flight) {
-					work += flight.academia;
+					work += flight.work;
 					personal += flight.personal;
 				});
 				if (work == NaN || personal == NaN) {
@@ -396,7 +405,16 @@ content: "✖";
 		// 115g CO2 per passenger km for a Boeing 737-400, not including radiative forcing
 		// = .115 kg = .000115 metric tons
 		// see also https://en.wikipedia.org/wiki/Carbon_footprint#Flight
-		statusLabel.innerHTML = "Total distance travelled: at least<sup>*</sup> " + totalDistance.toLocaleString() + "km on " + nFlights + " flights along " + Object.keys(routes).length + " different routes. Approximate<sup>**</sup> CO<sub>2</sub> emission: " + Math.round(totalDistance * .0115)/100 + ' <a href="https://makewealthhistory.org/2012/12/03/picture-a-tonne-of-carbon/">metric tons</a>';
+		var calculation = "Total distance travelled: at least<sup>*</sup> " + totalDistance.toLocaleString() + "km on " + nFlights + " flights along " + Object.keys(routes).length + " different routes. Approximate<sup>**</sup> CO<sub>2</sub> emission: " + Math.round(totalDistance * .0115)/100 + ' <a href="https://makewealthhistory.org/2012/12/03/picture-a-tonne-of-carbon/">metric tons</a>';
+		if (missedFlights > 0) {
+			calculation += "<br>" + missedFlights + " additional missed flights or connections amount to another " + missedDistance + "km of empty seat travel.";
+		}
+		if (pricedDistance > 0) {
+			var knownProportion = pricedDistance / totalDistance;
+			calculation += "<br>Based on the known flight costs of $" + price + " covering " + Math.round(100*knownProportion) + "% of the distance travelled, the total expenditure on flights was about $" + Math.round(price / knownProportion).toLocaleString() + ".";
+		}
+		// TODO add missed flights
+		statusLabel.innerHTML = calculation;
 		if (errors.length) {
 			errorLabel.innerHTML = "Also encountered the following errors: " + errors;
 		} else {
