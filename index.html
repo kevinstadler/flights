@@ -136,6 +136,17 @@ content: "✖";
 			}
 		}
 	});
+	flightLayer.on("precompose", function(evt) { evt.context.globalCompositeOperation = "hard-light" });
+
+	var backgroundLayer = new ol.layer.Tile({
+		source: new ol.source.BingMaps({
+			key: "AnzJ8GUrq-Q-tkdVYWFWs-3H9pIyykpZBwnLXyGTXDA8WV6-1kg-veWxC9XBpMAt",
+			imagerySet: "Aerial",
+			maxZoom: 19
+		})
+	});
+	// background drawn behind polygons
+	backgroundLayer.on("precompose", function(evt) { evt.context.globalCompositeOperation = "destination-over" });
 
 	var container = document.getElementById('popup');
 	var content = document.getElementById('popup-content');
@@ -161,17 +172,11 @@ content: "✖";
 	var map = new ol.Map({
 		target: document.getElementById('map'),
 		layers: [
-			new ol.layer.Tile({
-					source: new ol.source.BingMaps({
-					key: "AnzJ8GUrq-Q-tkdVYWFWs-3H9pIyykpZBwnLXyGTXDA8WV6-1kg-veWxC9XBpMAt",
-					imagerySet: "Aerial",
-					maxZoom: 19
-				})
-			}),
-			flightLayer
+			flightLayer,
+			backgroundLayer
 		],
 		view: new ol.View({
-			center: ol.proj.fromLonLat([0, 40]),
+			center: ol.proj.fromLonLat([8, 40]),
 			zoom: 2.5,
 			minZoom: 2,
 			maxZoom: 7
@@ -371,7 +376,12 @@ content: "✖";
 					flightSource.addFeature(feature);
 				});
 			}
-			if (flight['cost']) {
+
+			// summary statistics
+
+			// assume 0 costs as being accounted for
+			if (flight['cost'] != null) {
+				// TODO check if numeric
 				price += flight['cost'];
 				pricedDistance += routes[route].distance;
 			}
@@ -384,6 +394,8 @@ content: "✖";
 			}
 		});
 
+//		var personalDistance = 0;
+//		var workDistance = 0;
 		Object.values(routes).forEach(function (route) {
 			var blue = 0;
 			if (route.flights[0].personal != null) {
@@ -397,6 +409,9 @@ content: "✖";
 					personal = 1;
 					work = 0;
 				}
+				// FIXME allocate total distance proportionally
+//				personalDistance += route.distance * route.flights.length * personal / (work + personal);
+//				workDistance += route.distance * route.flights.length * work / (work + personal);
 				blue = Math.round(maxIntensity * work / (work + personal));
 			}
 			route.color = '#' + toHex(maxIntensity - blue) + '00' + toHex(blue) + '99';
@@ -406,12 +421,15 @@ content: "✖";
 		// = .115 kg = .000115 metric tons
 		// see also https://en.wikipedia.org/wiki/Carbon_footprint#Flight
 		var calculation = "Total distance travelled: at least<sup>*</sup> " + totalDistance.toLocaleString() + "km on " + nFlights + " flights along " + Object.keys(routes).length + " different routes. Approximate<sup>**</sup> CO<sub>2</sub> emission: " + Math.round(totalDistance * .0115)/100 + ' <a href="https://makewealthhistory.org/2012/12/03/picture-a-tonne-of-carbon/">metric tons</a>';
+		// TODO add distance-per-cause breakdown
+//		if (workDistance > 0) {
+//		}
 		if (missedFlights > 0) {
 			calculation += "<br>" + missedFlights + " additional missed flights or connections amount to another " + missedDistance + "km of empty seat travel.";
 		}
 		if (pricedDistance > 0) {
 			var knownProportion = pricedDistance / totalDistance;
-			calculation += "<br>Based on the known flight costs of $" + price + " covering " + Math.round(100*knownProportion) + "% of the distance travelled, the total expenditure on flights was about $" + Math.round(price / knownProportion).toLocaleString() + ".";
+			calculation += "<br>Based on the known flight costs of $" + Math.round(price).toLocaleString() + " covering " + Math.round(100*knownProportion) + "% of the distance travelled, the total expenditure on flights was about $" + Math.round(price / knownProportion).toLocaleString() + " (~$" + Math.round(10000*price/pricedDistance)/100 + "/100km).";
 		}
 		// TODO add missed flights
 		statusLabel.innerHTML = calculation;
